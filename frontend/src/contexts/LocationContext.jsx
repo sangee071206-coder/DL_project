@@ -8,23 +8,12 @@ const LS_KEY_LAT = 'user_lat';
 const LS_KEY_LON = 'user_lon';
 
 export const LocationProvider = ({ children }) => {
-  const [userLocation, setUserLocationState] = useState(() => {
-    const saved = localStorage.getItem(LS_KEY_LOCATION);
-    return saved && saved !== 'Detecting location...' ? saved : 'Detecting location...';
-  });
-  const [lat, setLatState] = useState(() => {
-    const saved = localStorage.getItem(LS_KEY_LAT);
-    return saved ? parseFloat(saved) : null;
-  });
-  const [lon, setLonState] = useState(() => {
-    const saved = localStorage.getItem(LS_KEY_LON);
-    return saved ? parseFloat(saved) : null;
-  });
-  const [locationReady, setLocationReady] = useState(() => {
-    const saved = localStorage.getItem(LS_KEY_LOCATION);
-    return !!saved && saved !== 'Detecting location...';
-  });
+  const [userLocation, setUserLocationState] = useState('Detecting location...');
+  const [lat, setLatState] = useState(null);
+  const [lon, setLonState] = useState(null);
+  const [locationReady, setLocationReady] = useState(false);
   const [detecting, setDetecting] = useState(false);
+
 
   // Synchronize with backend profile if token exists
   const syncProfileLocation = useCallback(async (locName) => {
@@ -49,9 +38,11 @@ export const LocationProvider = ({ children }) => {
   const setCoords = useCallback((latitude, longitude) => {
     setLatState(latitude);
     setLonState(longitude);
+    // Still persist manual overrides for profile sync
     if (latitude != null) localStorage.setItem(LS_KEY_LAT, String(latitude));
     if (longitude != null) localStorage.setItem(LS_KEY_LON, String(longitude));
   }, []);
+
 
   // Resolve coordinates using backend weather reverse-geocoding (avoids browser CORS/403 on Nominatim)
   const resolveCoordinates = useCallback(async (latitude, longitude) => {
@@ -122,19 +113,13 @@ export const LocationProvider = ({ children }) => {
     setLocationReady(true);
   }, [setUserLocation, setCoords]);
 
-  // One-time auto-detection on first boot if no location is stored
+  // Always auto-detect live GPS on boot (no localStorage cache for coordinates)
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
-    const savedLoc = localStorage.getItem(LS_KEY_LOCATION);
-    if (savedLoc && savedLoc !== 'Detecting location...') {
-      setLocationReady(true);
-      return;
-    }
-
-    // Try detecting live browser GPS
+    // Always try live browser GPS first
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       setDetecting(true);
       navigator.geolocation.getCurrentPosition(
@@ -146,7 +131,20 @@ export const LocationProvider = ({ children }) => {
           setDetecting(false);
         },
         async () => {
-          // Geolocation denied or unavailable - check profile or fallback
+          // GPS denied — try saved profile location or hardcoded default
+          const savedLoc = localStorage.getItem(LS_KEY_LOCATION);
+          if (savedLoc && savedLoc !== 'Detecting location...') {
+            setUserLocationState(savedLoc);
+            const savedLat = localStorage.getItem(LS_KEY_LAT);
+            const savedLon = localStorage.getItem(LS_KEY_LON);
+            if (savedLat && savedLon) {
+              setLatState(parseFloat(savedLat));
+              setLonState(parseFloat(savedLon));
+            }
+            setLocationReady(true);
+            setDetecting(false);
+            return;
+          }
           try {
             const profileRes = await apiClient.get('/users/profiles/me');
             if (profileRes.data && profileRes.data.location && profileRes.data.location !== 'Unknown Location') {
@@ -155,16 +153,14 @@ export const LocationProvider = ({ children }) => {
               setDetecting(false);
               return;
             }
-          } catch (e) {
-            // Profile check skipped
-          }
-          // Default region
+          } catch (e) {}
+          // Final fallback
           setCoords(21.1702, 72.8311);
           setUserLocation('Surat, Gujarat');
           setLocationReady(true);
           setDetecting(false);
         },
-        { timeout: 8000 }
+        { timeout: 8000, enableHighAccuracy: true }
       );
     } else {
       setCoords(21.1702, 72.8311);
@@ -172,6 +168,7 @@ export const LocationProvider = ({ children }) => {
       setLocationReady(true);
     }
   }, [setCoords, resolveCoordinates, setUserLocation]);
+
 
   return (
     <LocationContext.Provider

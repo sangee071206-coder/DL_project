@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { LocationProvider } from './contexts/LocationContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 
 // Pages imports
 import Landing from './pages/Landing';
@@ -147,11 +148,13 @@ function App() {
     <Router>
       <AuthProvider>
         <LocationProvider>
-          <ThemeProvider>
-            <ChatProvider>
-              <AppRoutes />
-            </ChatProvider>
-          </ThemeProvider>
+          <LanguageProvider>
+            <ThemeProvider>
+              <ChatProvider>
+                <AppRoutes />
+              </ChatProvider>
+            </ThemeProvider>
+          </LanguageProvider>
         </LocationProvider>
       </AuthProvider>
     </Router>
